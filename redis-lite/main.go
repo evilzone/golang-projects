@@ -1,7 +1,12 @@
 package main
 
-import "redis-lite/core"
+import (
+	"redis-lite/core"
+	"redis-lite/storage"
+)
 
 func main() {
-	core.NewServer(core.ServerOpts{Port: 8080}).Start()
+	inMemoryStore := storage.NewInMemoryStorage()
+	processor := &core.CommandProcessor{Cache: inMemoryStore}
+	core.NewServer(core.ServerOpts{Port: 8080}, processor).Start()
 }

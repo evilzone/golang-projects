@@ -12,11 +12,12 @@ type ServerOpts struct {
 }
 
 type Server struct {
-	opts ServerOpts
+	opts             ServerOpts
+	requestProcessor RequestProcessor
 }
 
-func NewServer(opts ServerOpts) *Server {
-	return &Server{opts: opts}
+func NewServer(opts ServerOpts, requestProcessor RequestProcessor) *Server {
+	return &Server{opts: opts, requestProcessor: requestProcessor}
 }
 
 func (s *Server) Start() {
@@ -60,6 +61,40 @@ func (s *Server) handleConnection(conn net.Conn) {
 			fmt.Printf("Error is %s\n", err)
 			return
 		}
-		fmt.Printf("Received %d bytes %s\n", n, buff[:n])
+
+		data_recv := string(buff[:n])
+		data_recv = data_recv[:len(data_recv)-1]
+
+		fmt.Printf("Received %d bytes %s\n", n, data_recv)
+
+		req, err := parseProtocol(data_recv)
+
+		if err != nil {
+			fmt.Printf("Error parsing protocol %s\n", err)
+			s.writeError(err, conn)
+			continue
+		}
+
+		resp, err := s.requestProcessor.Process(req)
+
+		if err != nil {
+			fmt.Printf("Error parsing protocol %s\n", err)
+			s.writeError(err, conn)
+			continue
+		}
+
+		s.writeSuccess(resp.Value, conn)
 	}
+}
+
+func (s *Server) writeError(err error, conn net.Conn) {
+	conn.Write([]byte(fmt.Sprintf("ERR: %s\n", err)))
+}
+
+func (s *Server) writeSuccess(value []byte, conn net.Conn) {
+	if len(value) == 0 {
+		conn.Write([]byte("OK\n"))
+		return
+	}
+	conn.Write([]byte(fmt.Sprintf("OK: %s\n", value)))
 }
