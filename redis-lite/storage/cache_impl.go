@@ -16,6 +16,8 @@ func NewInMemoryStorage() *InMemoryStorage {
 	}
 }
 
+var ErrKeyNotFound = errors.New("key not found")
+
 func (i *InMemoryStorage) Set(key string, value []byte) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -30,7 +32,7 @@ func (i *InMemoryStorage) Get(key string) ([]byte, error) {
 	val, ok := i.data[key]
 
 	if !ok {
-		return nil, errors.New("key not found")
+		return nil, ErrKeyNotFound
 	}
 	return val, nil
 }
