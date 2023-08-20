@@ -23,10 +23,13 @@ type Command struct {
 }
 
 var (
-	CMDGet  Command = Command{Cmd: "GET", MinRequiredParams: 1}
-	CMDSet  Command = Command{Cmd: "SET", MinRequiredParams: 2}
-	CMDDel  Command = Command{Cmd: "DEL", MinRequiredParams: 1}
-	CMDPing Command = Command{Cmd: "PING", MinRequiredParams: 0}
+	CMDGet    Command = Command{Cmd: "GET", MinRequiredParams: 1}
+	CMDSet    Command = Command{Cmd: "SET", MinRequiredParams: 2}
+	CMDDel    Command = Command{Cmd: "DEL", MinRequiredParams: 0}
+	CMDPing   Command = Command{Cmd: "PING", MinRequiredParams: 0}
+	CMDExpire Command = Command{Cmd: "EXPIRE", MinRequiredParams: 2}
+	CMDTtl    Command = Command{Cmd: "TTL", MinRequiredParams: 1}
+	CMDKeys   Command = Command{Cmd: "KEYS", MinRequiredParams: 1}
 )
 
 func parseCommand(cmd string) (Command, error) {
@@ -39,6 +42,12 @@ func parseCommand(cmd string) (Command, error) {
 		return CMDDel, nil
 	case CMDPing.Cmd:
 		return CMDPing, nil
+	case CMDExpire.Cmd:
+		return CMDExpire, nil
+	case CMDTtl.Cmd:
+		return CMDTtl, nil
+	case CMDKeys.Cmd:
+		return CMDKeys, nil
 	default:
 		return Command{}, ErrorInvalidCommand
 	}

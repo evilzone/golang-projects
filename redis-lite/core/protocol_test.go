@@ -152,6 +152,5 @@ func TestProtocol(t *testing.T) {
 				t.Errorf("Expected 'key', got  %s", req.Params[2])
 			}
 		})
-
 	})
 }

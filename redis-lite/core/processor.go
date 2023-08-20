@@ -1,7 +1,11 @@
 package core
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"redis-lite/storage"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -11,7 +15,7 @@ type RequestProcessor interface {
 }
 
 type CommandProcessor struct {
-	Cache storage.Cache[string, []byte]
+	Cache *storage.InMemoryStorage
 }
 
 func (cp *CommandProcessor) Process(request Request) (Response, error) {
@@ -23,18 +27,58 @@ func (cp *CommandProcessor) Process(request Request) (Response, error) {
 	case CMDDel:
 		return cp.ProcessDel(request)
 	case CMDPing:
-		return cp.ProcessPing(request)
+		return cp.ProcessPing()
+	case CMDExpire:
+		return cp.ProcessExpiry(request)
+	case CMDTtl:
+		return cp.ProcessTTL(request)
+	case CMDKeys:
+		return cp.ProcessKeys(request)
 	default:
 		return Response{}, ErrorInvalidCommand
 	}
 }
 
-func (cp *CommandProcessor) ProcessGet(request Request) (Response, error) {
-	res, err := cp.Cache.Get(request.Params[0])
-	if err != nil {
-		return Response{}, err
+func (cp *CommandProcessor) ProcessKeys(request Request) (Response, error) {
+
+	pattern := request.Params[0]
+	keys := cp.Cache.Keys()
+
+	if len(keys) == 0 {
+		return Response{Success: false, Value: []byte("empty list or set")}, nil
 	}
-	return Response{Success: true, Value: res}, nil
+
+	matchedKeys := make([]string, 0)
+
+	//regexp.Compile("^[a-zA-Z0-9_.-\\?]*$")
+
+	for _, key := range keys {
+
+		matched, _ := regexp.MatchString(pattern, key)
+
+		if matched {
+			matchedKeys = append(matchedKeys, key)
+		}
+	}
+
+	var buffer bytes.Buffer
+
+	for index := 0; index < len(matchedKeys); index++ {
+		str := fmt.Sprintf("%d) %s\n", index+1, matchedKeys[index])
+		buffer.WriteString(str)
+	}
+
+	return Response{Success: true, Value: buffer.Bytes()}, nil
+}
+
+func (cp *CommandProcessor) ProcessGet(request Request) (Response, error) {
+
+	item, err := cp.Cache.Get(request.Params[0])
+
+	if err != nil {
+		return Response{Value: []byte("(nil)")}, nil
+	}
+	return Response{Success: true, Value: item.Value}, nil
 }
 
 func (cp *CommandProcessor) ProcessSet(request Request) (Response, error) {
@@ -42,29 +86,72 @@ func (cp *CommandProcessor) ProcessSet(request Request) (Response, error) {
 	key := request.Params[0]
 	value := request.Params[1]
 
-	cp.Cache.Set(key, []byte(value))
-
 	if len(request.Params) > 2 {
 		ttl, err := strconv.Atoi(request.Params[2])
 		if err != nil {
-			cp.Cache.Delete(key)
 			return Response{}, err
 		}
-		go cp.processExpiry(key, time.Duration(ttl)*time.Second)
+		cp.Cache.Set(key, []byte(value), time.Duration(ttl)*time.Second)
+
+		go cp.ExpireKey(key, time.Duration(ttl)*time.Second)
+	} else {
+		cp.Cache.Set(key, []byte(value), 0)
 	}
 	return Response{Success: true}, nil
 }
 
 func (cp *CommandProcessor) ProcessDel(request Request) (Response, error) {
-	cp.Cache.Delete(request.Params[0])
-	return Response{Success: true}, nil
+	cp.Cache.Delete(request.Params)
+	return Response{Success: true,
+		Value: []byte(strconv.FormatInt(int64(len(request.Params)), 10))}, nil
 }
 
-func (cp *CommandProcessor) ProcessPing(request Request) (Response, error) {
+func (cp *CommandProcessor) ProcessPing() (Response, error) {
 	return Response{Success: true, Value: []byte("PONG")}, nil
 }
 
-func (cp *CommandProcessor) processExpiry(key string, ttl time.Duration) {
+// ProcessExpiry this is the basic implementation without the options {'NX','XX', 'GT','LT'}
+func (cp *CommandProcessor) ProcessExpiry(request Request) (Response, error) {
+	key := request.Params[0]
+	ttl, err1 := strconv.Atoi(request.Params[1])
+
+	// err conditions: if ttl not a valid integer or key not present in the cache
+	if err1 != nil {
+		return Response{Success: true, Value: []byte("0")}, nil
+	}
+
+	item, err2 := cp.Cache.Get(key)
+
+	if err2 != nil {
+		return Response{Success: false, Value: []byte("0")}, nil
+	}
+
+	cp.Cache.Set(key, item.Value, time.Duration(ttl)*time.Second)
+	go cp.ExpireKey(key, time.Duration(ttl)*time.Second)
+
+	return Response{Success: false, Value: []byte("1")}, nil
+}
+
+func (cp *CommandProcessor) ProcessTTL(request Request) (Response, error) {
+	key := request.Params[0]
+
+	item, err := cp.Cache.Get(key)
+
+	// if key doesn't exist return -2
+	if errors.Is(err, storage.ErrKeyNotFound) {
+		return Response{Success: false, Value: []byte("-2")}, nil
+	}
+
+	// if key exists with no expiry or if the key is expired return -1
+	if item.ExpireAt == -1 || errors.Is(err, storage.ErrKeyExpired) {
+		return Response{Success: false, Value: []byte("-1")}, nil
+	}
+
+	return Response{Success: true,
+		Value: []byte(strconv.FormatInt((item.ExpireAt-time.Now().UnixNano())/1e9, 10))}, nil
+}
+
+func (cp *CommandProcessor) ExpireKey(key string, ttl time.Duration) {
 	<-time.After(ttl)
-	cp.Cache.Delete(key)
+	cp.Cache.Delete([]string{key})
 }

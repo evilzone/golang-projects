@@ -96,5 +96,5 @@ func (s *Server) writeSuccess(value []byte, conn net.Conn) {
 		conn.Write([]byte("OK\n"))
 		return
 	}
-	conn.Write([]byte(fmt.Sprintf("OK: %s\n", value)))
+	conn.Write([]byte(fmt.Sprintf("%s\n", value)))
 }
